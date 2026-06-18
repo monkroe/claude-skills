@@ -1,467 +1,744 @@
 ---
-
 name: llm-council
-
-
-description: "Run any question, idea, or decision through a council of 5 AI advisors who independently analyze it, peer-review each other anonymously, and synthesize a final verdict. Based on Karpathy's LLM Council methodology. MANDATORY TRIGGERS: 'council this', 'run the council', 'war room this', 'pressure-test this', 'stress-test this', 'debate this'. STRONG TRIGGERS (use when combined with a real decision or tradeoff): 'should I X or Y', 'which option', 'what would you do', 'is this the right move', 'validate this', 'get multiple perspectives', 'I can't decide', 'I'm torn between'. Do NOT trigger on simple yes/no questions, factual lookups, or casual 'should I' without a meaningful tradeoff (e.g. 'should I use markdown' is not a council question). DO trigger when the user presents a genuine decision with stakes, multiple options, and context that suggests they want it pressure-tested from multiple angles."
-
+description: >
+  Прогони решение через совет из 5 ИИ-советников. Режимы: экспресс
+  (по умолчанию) и полный (с перекрёстным обзором).
+  ТРИГГЕРЫ RU: спроси совет, созови совет, совет.
+  TRIGGERS EN: council this, stress-test this, war room this, debate this.
+  TRIGGERS LT: kviesti tarybą, konsultantas, patark, sušauk tarybą.
+  FULL: полный совет, full council, pilna taryba, стресс-тест, stress-test.
+  Язык вывода = язык ввода. Output language follows input. Kalba seka įvesties kalba.
+  НЕ срабатывает / Does NOT trigger / Nesukelia: факты, да/нет, без реального размена.
 ---
 
 
-# LLM Council
+________________
 
 
-You ask one AI a question, you get one answer. That answer might be great. It might be mid. You have no way to tell because you only saw one perspective.
+LLM Council
+Задаёшь вопрос одной нейросети — получаешь один ответ. Может, ответ хороший. Может, средний. Понять невозможно — ты видел только одну точку зрения.
 
 
-The council fixes this. It runs your question through 5 independent advisors, each thinking from a fundamentally different angle. Then they review each other's work. Then a chairman synthesizes everything into a final recommendation that tells you where the advisors agree, where they clash, and what you should actually do.
+Совет это исправляет. Он прогоняет твой вопрос через 5 независимых советников, каждый думает с принципиально разного угла. Председатель потом находит зерно — самое важное, что вытащили советники, — и сводит самые рабочие идеи в одну усиленную рекомендацию.
 
 
-This is adapted from Andrej Karpathy's LLM Council. He dispatches queries to multiple models, has them peer-review each other anonymously, then a chairman produces the final answer. We do the same thing inside Claude using sub-agents with different thinking lenses instead of different models.
+Это адаптация LLM Council Андрея Карпати. Он рассылает запрос разным моделям, заставляет их анонимно ревьюить друг друга, потом председатель выдаёт финальный ответ. Мы делаем то же внутри Клода — через суб-агентов с разными линзами мышления вместо разных моделей.
 
 
----
+________________
 
 
-## when to run the council
+когда созывать совет
+Совет — для вопросов, где ошибиться дорого.
 
 
-The council is for questions where being wrong is expensive.
+Хорошие вопросы для совета:
 
 
-Good council questions:
+* «Запустить воркшоп за $97 или курс за $497?»
 
-- "Should I launch a $97 workshop or a $497 course?"
 
-- "Which of these 3 positioning angles is strongest?"
+* «Какой из этих 3 углов позиционирования сильнее?»
 
-- "I'm thinking of pivoting from X to Y. Am I crazy?"
 
-- "Here's my landing page copy. What's weak?"
+* «Думаю развернуть бизнес с X на Y. Я с ума сошла?»
 
-- "Should I hire a VA or build an automation first?"
 
+* «Вот текст лендинга. Где слабо?»
 
-Bad council questions:
 
-- "What's the capital of France?" (one right answer, no need for perspectives)
+* «Нанять ассистента или сначала построить автоматизацию?»
 
-- "Write me a tweet" (creation task, not a decision)
 
-- "Summarize this article" (processing task, not judgment)
+Плохие вопросы для совета:
 
 
-The council shines when there's genuine uncertainty and the cost of a bad call is high. If you already know the answer and just want validation, the council will likely tell you things you don't want to hear. That's the point.
+* «Какая столица Франции?» (один правильный ответ, разные углы не нужны)
 
 
----
+* «Напиши мне твит» (задача на создание, не на решение)
 
 
-## the five advisors
+* «Сделай саммари этой статьи» (задача на обработку, не на суждение)
 
 
-Each advisor thinks from a different angle. They're not job titles or personas. They're thinking styles that naturally create tension with each other.
+Совет блистает, когда есть реальная неопределённость и цена ошибки высока. Если ты уже знаешь ответ и просто хочешь валидации — совет, скорее всего, скажет тебе вещи, которые ты слышать не хочешь. В этом и смысл.
 
 
-### 1. The Contrarian
+________________
 
-Actively looks for what's wrong, what's missing, what will fail. Assumes the idea has a fatal flaw and tries to find it. If everything looks solid, digs deeper. The Contrarian is not a pessimist. They're the friend who saves you from a bad deal by asking the questions you're avoiding.
 
+два режима
+экспресс (по умолчанию)
+5 советников отвечают параллельно → председатель сразу собирает итог. Без перекрёстного обзора.
 
-### 2. The First Principles Thinker
 
-Ignores the surface-level question and asks "what are we actually trying to solve here?" Strips away assumptions. Rebuilds the problem from the ground up. Sometimes the most valuable council output is the First Principles Thinker saying "you're asking the wrong question entirely."
+Используй для решений средней ставки: ценник, угол позиционирования, формулировка лендинга, выбор между двумя похожими вариантами. Быстро, дёшево, ясно.
+полный совет
+5 советников отвечают параллельно → анонимизация ответов → 5 ревьюеров делают перекрёстный обзор → председатель собирает итог.
 
 
-### 3. The Expansionist
+Используй для серьёзных решений: пивот бизнеса, крупный запуск, найм/увольнение, отказ от клиента, выбор между двумя стратегическими путями. Дольше, дороже, но ловит слепые пятна.
 
-Looks for upside everyone else is missing. What could be bigger? What adjacent opportunity is hiding? What's being undervalued? The Expansionist doesn't care about risk (that's the Contrarian's job). They care about what happens if this works even better than expected.
 
+Когда что запускать:
 
-### 4. The Outsider
 
-Has zero context about you, your field, or your history. Responds purely to what's in front of them. This is the most underrated advisor. Experts develop blind spots. The Outsider catches the curse of knowledge: things that are obvious to you but confusing to everyone else.
+| Сигнал в запросе | Режим |
 
 
-### 5. The Executor
+|---|---|
 
-Only cares about one thing: can this actually be done, and what's the fastest path to doing it? Ignores theory, strategy, and big-picture thinking. The Executor looks at every idea through the lens of "OK but what do you do Monday morning?" If an idea sounds brilliant but has no clear first step, the Executor will say so.
 
+| «спроси совет» / «созови совет» / без уточнений | экспресс |
 
-**Why these five:** They create three natural tensions. Contrarian vs Expansionist (downside vs upside). First Principles vs Executor (rethink everything vs just do it). The Outsider sits in the middle keeping everyone honest by seeing what fresh eyes see.
 
+| «полный совет» / «глубокий совет» / «стресс-тест» / «разбери жёстко» | полный |
 
----
 
+| Цена ошибки очевидно высокая (необратимое решение, крупная сумма, репутация) | предложи полный, подтверди и запускай |
 
-## how a council session works
 
+Если сомневаешься — запускай экспресс и в конце спроси: «Хочешь прогнать ещё через перекрёстный обзор?» Это дешевле, чем сразу гнать полный.
 
-### step 1: frame the question (with context enrichment)
 
+________________
 
-When the user says "council this" (or any trigger phrase), do two things before framing:
 
+пять советников
+Каждый советник думает с разного угла. Это не должности и не персонажи. Это стили мышления, которые естественно создают напряжение друг с другом.
+1. Критик
+Активно ищет, что не так, чего не хватает, что развалится. Исходит из того, что у идеи есть фатальный изъян, и пытается его найти. Если всё выглядит надёжно — копает глубже. Критик не пессимист. Это друг, который спасает тебя от плохой сделки, задавая те самые вопросы, которые ты избегаешь.
+2. Стратег с нуля
+Игнорирует поверхностный вопрос и спрашивает: «А что мы вообще пытаемся решить?» Снимает все допущения. Пересобирает задачу с фундамента. Иногда самое ценное, что выдаёт совет, — это Стратег с нуля, говорящий: «Ты вообще не тот вопрос задаёшь».
+3. Оптимист
+Ищет апсайд, который все остальные упустили. Что может быть больше? Какая смежная возможность спрятана рядом? Что недооценено? Оптимиста не волнует риск (это работа Критика). Его волнует, что произойдёт, если всё сработает даже лучше ожиданий.
+4. Покупатель
+Представляет того, кто на другой стороне — кто платит, кликает, смотрит, отписывается, говорит «нет». Не знает твою кухню, не интересуется твоей экспертизой, реагирует только на то, что видит. Задаёт вопросы покупателя: «Это для меня? Что я получу? Сколько это стоит и стоит ли оно того? Почему я должен это сейчас?» Покупатель ловит «проклятие знания» (то, что для тебя очевидно, для него — китайская грамота) и заземляет любое решение на реальный обмен ценности.
+5. Исполнитель
+Его волнует одна вещь: это вообще можно сделать, и какой самый быстрый путь? Игнорирует теорию, стратегию и большую картину. Исполнитель смотрит на любую идею через линзу: «Окей, а что ты делаешь в понедельник утром?» Если идея звучит блестяще, но у неё нет очевидного первого шага — Исполнитель об этом скажет.
 
-**A. Scan the workspace for context.** The user's question is often just the tip of the iceberg. Their Claude setup likely contains files that would dramatically improve the council's output. Before framing, quickly scan for and read any relevant context files:
 
+Почему именно эти пятеро: они создают три естественных напряжения. Критик против Оптимиста (риск против апсайда). Стратег с нуля против Исполнителя (всё переосмыслить против просто сделать). Покупатель сидит на стороне аудитории и держит всех в честности — потому что в конце концов решение работает или не работает не в твоей голове, а у того, кто платит, кликает или уходит.
 
-- `CLAUDE.md` or `claude.md` in the project root or workspace (business context, preferences, constraints)
 
-- Any `memory/` folder (audience profiles, voice docs, business details, past decisions)
+________________
 
-- Any files the user explicitly referenced or attached
 
-- Recent council transcripts in this folder (to avoid re-counciling the same ground)
+как проходит сессия совета
+шаг 1: сформулируй вопрос (с обогащением контекстом)
+Когда пользователь говорит «спроси совет» (или любая триггерная фраза), сделай две вещи перед формулировкой:
 
-- Any other context files that seem relevant to the specific question (e.g., if they're asking about pricing, look for revenue data, past launch results, audience research)
 
+A. Просканируй рабочее пространство на контекст. Вопрос пользователя обычно — лишь верхушка айсберга. В его установке Клода, скорее всего, есть файлы, которые драматически улучшат вывод совета. Перед формулировкой быстро поищи и прочитай релевантные файлы:
 
-Use `Glob` and quick `Read` calls to find these. Don't spend more than 30 seconds on this. You're looking for the 2-3 files that would give advisors the context they need to give specific, grounded advice instead of generic takes.
 
+* CLAUDE.md или claude.md в корне проекта или рабочем пространстве (бизнес-контекст, предпочтения, ограничения)
 
-**B. Frame the question.** Take the user's raw question AND the enriched context and reframe it as a clear, neutral prompt that all five advisors will receive. The framed question should include:
 
+* Любая папка memory/ (профили аудитории, документы по голосу, детали бизнеса, прошлые решения)
 
-1. The core decision or question
 
-2. Key context from the user's message
+* Любые файлы, на которые пользователь явно сослался или которые приложил
 
-3. Key context from workspace files (business stage, audience, constraints, past results, relevant numbers)
 
-4. What's at stake (why this decision matters)
+* Свежие транскрипты сессий совета в этой папке (чтобы не пересоветовать одно и то же)
 
 
-Don't add your own opinion. Don't steer it. But DO make sure each advisor has enough context to give a specific, grounded answer rather than generic advice.
+* Любые другие файлы контекста, релевантные конкретному вопросу (например, если он спрашивает про цены — поищи данные по выручке, прошлым запускам, исследованиям аудитории)
 
 
-If the question is too vague ("council this: my business"), ask one clarifying question. Just one. Then proceed.
+Используй Glob и быстрые вызовы Read. Не трать на это больше 30 секунд. Ты ищешь те 2–3 файла, которые дадут советникам контекст для конкретного, заземлённого совета вместо общих рассуждений.
 
 
-Save the framed question for the transcript.
+B. Сформулируй вопрос. Возьми сырой вопрос пользователя И обогащённый контекст и переформулируй как чёткий, нейтральный промпт, который получат все пять советников. Сформулированный вопрос должен включать:
 
 
-### step 2: convene the council (5 sub-agents in parallel)
+1. Само решение или вопрос
 
 
-Spawn all 5 advisors simultaneously as sub-agents. Each gets:
+2. Ключевой контекст из сообщения пользователя
 
 
-1. Their advisor identity and thinking style (from the descriptions above)
+3. Ключевой контекст из файлов рабочего пространства (стадия бизнеса, аудитория, ограничения, прошлые результаты, релевантные цифры)
 
-2. The framed question
 
-3. A clear instruction: respond independently. Do not hedge. Do not try to be balanced. Lean fully into your assigned perspective. If you see a fatal flaw, say it. If you see massive upside, say it. Your job is to represent your angle as strongly as possible. The synthesis comes later.
+4. Что на кону (почему это решение важно)
 
 
-Each advisor should produce a response of 150-300 words. Long enough to be substantive, short enough to be scannable.
+Не добавляй своё мнение. Не направляй. Но обязательно убедись, что у каждого советника достаточно контекста для конкретного, заземлённого ответа.
 
 
-**Sub-agent prompt template:**
+Если вопрос слишком расплывчатый («спроси совет: мой бизнес»), задай ОДИН уточняющий вопрос. Только один. И двигайся дальше.
 
 
-```
+Сохрани сформулированный вопрос для транскрипта.
+шаг 2: созыв совета (5 суб-агентов параллельно)
+Запусти всех 5 советников одновременно как суб-агентов. Каждый получает:
 
-You are [Advisor Name] on an LLM Council.
 
+1. Свою идентичность и стиль мышления (из описаний выше)
 
-Your thinking style: [advisor description from above]
 
+2. Сформулированный вопрос
 
-A user has brought this question to the council:
 
+3. Чёткую инструкцию: отвечай независимо, не уклоняйся, не пытайся быть сбалансированным, прижмись к своему углу. Видишь фатальный изъян — скажи. Видишь огромный апсайд — скажи. Твоя задача — представить свой угол максимально сильно. Синтез будет позже.
 
----
 
-[framed question]
+Каждый советник выдаёт ответ на 150–300 слов. Достаточно длинный, чтобы быть содержательным, достаточно короткий, чтобы пробежать глазами.
 
----
 
+Шаблон промпта для суб-агента:
 
-Respond from your perspective. Be direct and specific. Don't hedge or try to be balanced. Lean fully into your assigned angle. The other advisors will cover the angles you're not covering.
 
+Ты — [Имя советника] в LLM Council.
 
-Keep your response between 150-300 words. No preamble. Go straight into your analysis.
 
-```
 
 
-### step 3: peer review (5 sub-agents in parallel)
+Твой стиль мышления: [описание советника из раздела выше]
 
 
-This is the step that makes the council more than just "ask 5 times." It's the core of Karpathy's insight.
 
 
-Collect all 5 advisor responses. Anonymize them as Response A through E (randomize which advisor maps to which letter so there's no positional bias).
+Пользователь принёс совету этот вопрос:
 
 
-Spawn 5 new sub-agents, one for each advisor. Each reviewer sees all 5 anonymized responses and answers three questions:
-
-
-1. Which response is the strongest and why? (pick one)
-
-2. Which response has the biggest blind spot and what is it?
-
-3. What did ALL responses miss that the council should consider?
-
-
-**Reviewer prompt template:**
-
-
-```
-
-You are reviewing the outputs of an LLM Council. Five advisors independently answered this question:
-
-
----
-
-[framed question]
-
----
-
-
-Here are their anonymized responses:
-
-
-**Response A:**
-
-[response]
-
-
-**Response B:**
-
-[response]
-
-
-**Response C:**
-
-[response]
-
-
-**Response D:**
-
-[response]
-
-
-**Response E:**
-
-[response]
-
-
-Answer these three questions. Be specific. Reference responses by letter.
-
-
-1. Which response is the strongest? Why?
-
-2. Which response has the biggest blind spot? What is it missing?
-
-3. What did ALL five responses miss that the council should consider?
-
-
-Keep your review under 200 words. Be direct.
-
-```
-
-
-### step 4: chairman synthesis
-
-
-This is the final step. One agent gets everything: the original question, all 5 advisor responses (now de-anonymized so you can see which advisor said what), and all 5 peer reviews.
-
-
-The chairman's job is to produce the final council output. It follows this structure:
-
-
-**COUNCIL VERDICT**
-
-
-1. **Where the council agrees** — the points that multiple advisors converged on independently. These are high-confidence signals.
-
-
-2. **Where the council clashes** — the genuine disagreements. Don't smooth these over. Present both sides and explain why reasonable advisors disagree.
-
-
-3. **Blind spots the council caught** — things that only emerged through the peer review round. Things individual advisors missed that other advisors flagged.
-
-
-4. **The recommendation** — a clear, actionable recommendation. Not "it depends." Not "consider both sides." A real answer. The chairman can disagree with the majority if the reasoning supports it.
-
-
-5. **The one thing you should do first** — a single concrete next step. Not a list of 10 things. One thing.
-
-
-**Chairman prompt template:**
-
-
-```
-
-You are the Chairman of an LLM Council. Your job is to synthesize the work of 5 advisors and their peer reviews into a final verdict.
-
-
-The question brought to the council:
-
----
-
-[framed question]
-
----
-
-
-ADVISOR RESPONSES:
-
-
-**The Contrarian:**
-
-[response]
-
-
-**The First Principles Thinker:**
-
-[response]
-
-
-**The Expansionist:**
-
-[response]
-
-
-**The Outsider:**
-
-[response]
-
-
-**The Executor:**
-
-[response]
-
-
-PEER REVIEWS:
-
-[all 5 peer reviews]
-
-
-Produce the council verdict using this exact structure:
-
-
-## Where the Council Agrees
-
-[Points multiple advisors converged on independently. These are high-confidence signals.]
-
-
-## Where the Council Clashes
-
-[Genuine disagreements. Present both sides. Explain why reasonable advisors disagree.]
-
-
-## Blind Spots the Council Caught
-
-[Things that only emerged through peer review. Things individual advisors missed that others flagged.]
-
-
-## The Recommendation
-
-[A clear, direct recommendation. Not "it depends." A real answer with reasoning.]
-
-
-## The One Thing to Do First
-
-[A single concrete next step. Not a list. One thing.]
-
-
-Be direct. Don't hedge. The whole point of the council is to give the user clarity they couldn't get from a single perspective.
-
-```
-
-
-### step 5: present the verdict in chat
-
-
-After the chairman synthesis is complete, present the full verdict directly in chat using markdown. Do NOT generate an HTML report or any files. The user reads it in the conversation.
-
-Format the output as:
-
-```
-## Council Verdict: {short topic}
-
-### Where the Council Agrees
-{content}
-
-### Where the Council Clashes
-{content}
-
-### Blind Spots the Council Caught
-{content}
-
-### The Recommendation
-{content}
-
-### The One Thing to Do First
-{content}
-```
-
-Keep it scannable. Use bullet points. Include the before/after examples where relevant.
-
-
-### step 6: save the transcript (optional)
-
-
-Only save a transcript if the user asks for it or if the question is significant enough to reference later. If saving, write to `council-transcript-[timestamp].md` in the project's `active/` directory.
 
 
 ---
 
 
-## example: counciling a product decision
-
-
-**User:** "Council this: I'm thinking of building a $297 course on Claude Code for beginners. My audience is mostly non-technical solopreneurs. Is this the right move?"
-
-
-**The Contrarian:** "The market is flooded with Claude courses right now. At $297, you're competing with free YouTube content. Your audience is non-technical, which means high support burden and refund risk. The people who would pay $297 are likely already past beginner level..."
-
-
-**The First Principles Thinker:** "What are you actually trying to achieve? If it's revenue, a course is one of the slowest paths. If it's authority, a free resource might do more. If it's building a customer base for higher-ticket offers, the price point and audience might be mismatched..."
-
-
-**The Expansionist:** "Beginner Claude for solopreneurs is a massive underserved market. Everyone's teaching advanced stuff. If you nail the beginner angle, you own the entry point to this entire space. The $297 might be low. What if this became a $997 program with community access..."
-
-
-**The Outsider:** "I don't know what Claude Code is. If I saw '$297 course on Claude Code for beginners,' I wouldn't know if this is for me. The name means nothing to someone outside your world. Your landing page needs to sell the outcome, not the tool..."
-
-
-**The Executor:** "A full course takes 4-8 weeks to produce properly. Before building anything, run a live workshop at $97 to 50 people. You validate demand, generate testimonials, and create the raw material for the course. If 50 people don't buy the workshop, 500 won't buy the course..."
-
-
-**Chairman's Verdict:**
-
-
-*Where the council agrees:* The beginner solopreneur angle has real demand, but the current framing (Claude Code course) is too tool-specific and won't resonate with non-technical buyers.
-
-
-*Where the council clashes:* Price. The Contrarian says $297 is too high given competition. The Expansionist says it's too low for the value. The resolution likely depends on how much support and community access is bundled.
-
-
-*Blind spots caught:* The Outsider's point that "Claude Code" means nothing to the target buyer is the single most important insight. Every advisor except the Outsider assumed the audience already knows what this is.
-
-
-*Recommendation:* Don't build the course yet. Validate with a lower-commitment offer first. But reframe entirely: sell the outcome (automate your business, get 10 hours back per week), not the tool.
-
-
-*One thing to do first:* Run a $97 live workshop called "How to automate your first business task with AI" to 50 people. Don't mention Claude Code in the title.
+[сформулированный вопрос]
 
 
 ---
 
 
-## important notes
 
 
-- **Always spawn all 5 advisors in parallel.** Sequential spawning wastes time and lets earlier responses bleed into later ones.
+Ответь со своей перспективы. Будь прямым и конкретным. Не уклоняйся, не пытайся быть сбалансированным. Прижмись к своему углу. Другие советники закроют те углы, которые не закрываешь ты.
 
-- **Always anonymize for peer review.** If reviewers know which advisor said what, they'll defer to certain thinking styles instead of evaluating on merit.
 
-- **The chairman can disagree with the majority.** If 4 out of 5 advisors say "do it" but the reasoning of the 1 dissenter is strongest, the chairman should side with the dissenter and explain why.
 
-- **Don't council trivial questions.** If the user asks something with one right answer, just answer it. The council is for genuine uncertainty where multiple perspectives add value.
 
-- **The visual report matters.** Most users will scan the report, not read the full transcript. Make the HTML output clean and scannable.
+Ответ — между 150 и 300 словами. Без преамбулы. Сразу в анализ.
+
+
+шаг 3 (только полный режим): перекрёстный обзор
+В экспресс-режиме этот шаг пропускается — сразу переходи к шагу 4.
+
+
+В полном режиме: собери все 5 ответов советников. Анонимизируй их как Ответ A — Ответ E (рандомизируй, какой советник какой буквой назван, чтобы не было позиционного смещения).
+
+
+Запусти 5 новых суб-агентов, по одному на каждого советника. Каждый ревьюер видит все 5 анонимизированных ответов и отвечает на три вопроса:
+
+
+1. Какой ответ самый сильный и почему? (выбери один)
+
+
+2. У какого ответа самое большое слепое пятно и в чём оно?
+
+
+3. Что упустили ВСЕ ответы и что совет должен учесть?
+
+
+Шаблон промпта для ревьюера:
+
+
+Ты делаешь перекрёстный обзор выводов LLM Council. Пять советников независимо ответили на этот вопрос:
+
+
+
+
+---
+
+
+[сформулированный вопрос]
+
+
+---
+
+
+
+
+Вот их анонимизированные ответы:
+
+
+
+
+**Ответ A:**
+
+
+[ответ]
+
+
+
+
+**Ответ B:**
+
+
+[ответ]
+
+
+
+
+**Ответ C:**
+
+
+[ответ]
+
+
+
+
+**Ответ D:**
+
+
+[ответ]
+
+
+
+
+**Ответ E:**
+
+
+[ответ]
+
+
+
+
+Ответь на три вопроса. Будь конкретным. Ссылайся на ответы по букве.
+
+
+
+
+1. Какой ответ самый сильный? Почему?
+
+
+2. У какого ответа самое большое слепое пятно? Чего ему не хватает?
+
+
+3. Что упустили все пять ответов и что совет должен учесть?
+
+
+
+
+Уложись в 200 слов. Будь прямым.
+
+
+шаг 4: синтез председателя
+Это финальный шаг. Один агент получает всё: исходный вопрос, все 5 ответов советников (де-анонимизированные) и — в полном режиме — все 5 перекрёстных обзоров.
+
+
+Задача председателя — НЕ судить и НЕ спорить с большинством. Его работа — найти зерно: самое важное, что вытащили советники. Найти самые рабочие идеи. И, если возможно, усилить их, скрестив сильные стороны разных мнений.
+
+
+Председатель — это редактор, а не арбитр. Он добывает золото из разговора, а не выносит приговор.
+
+
+Структура итога такая:
+
+
+ИТОГ СОВЕТА
+
+
+1. Зерно — одна-две фразы. Самое важное, что вытащили советники. Если на сессии случилось озарение — оно стоит здесь. Не повтор очевидного.
+
+
+2. Лучшие идеи (с возможным усилением) — топ-2 или топ-3 идеи из ответов. Где председатель видит, что идея одного советника становится сильнее, если соединить её с инсайтом другого, — он явно показывает: «Идея X от Оптимиста становится прочнее, если пропустить её через ограничение, которое заметил Критик. Получается: …». Если уместно — таблица сравнения вариантов.
+
+
+3. Полезные разногласия — где советники разошлись и почему это важный размен, а не просто шум. Не сглаживать, но и не драматизировать. Это карта реальных tradeoffs, на которые пользователь должен посмотреть осознанно.
+
+
+4. Рекомендация — чёткая, усиленная, реализуемая рекомендация. Не «зависит от ситуации». Не «учитывай обе стороны». Реальный ответ с обоснованием. Это может быть прямая линия одного советника или гибрид нескольких — как окажется сильнее.
+
+
+5. С чего начать — один конкретный следующий шаг. Не список из 10 пунктов. Одна вещь. Если правильный ответ — «не делай ничего, собери ещё данные» — так и пиши, не выдумывай ложное действие.
+
+
+Шаблон промпта для председателя:
+
+
+Ты — Председатель LLM Council. Твоя задача — НЕ судить и НЕ выбирать сторону.
+
+
+Твоя задача — найти зерно (самое важное, что вытащили советники), выделить самые рабочие идеи и, где можно, усилить их, скрестив сильные стороны разных ответов.
+
+
+
+
+Ты редактор, добывающий золото, а не арбитр.
+
+
+
+
+Вопрос, принесённый совету:
+
+
+---
+
+
+[сформулированный вопрос]
+
+
+---
+
+
+
+
+ОТВЕТЫ СОВЕТНИКОВ:
+
+
+
+
+**Критик:**
+
+
+[ответ]
+
+
+
+
+**Стратег с нуля:**
+
+
+[ответ]
+
+
+
+
+**Оптимист:**
+
+
+[ответ]
+
+
+
+
+**Покупатель:**
+
+
+[ответ]
+
+
+
+
+**Исполнитель:**
+
+
+[ответ]
+
+
+
+
+[В полном режиме добавь:]
+
+
+ПЕРЕКРЁСТНЫЕ ОБЗОРЫ:
+
+
+[все 5 обзоров]
+
+
+
+
+Выдай итог совета строго по этой структуре:
+
+
+
+
+## Зерно
+
+
+[Самое важное, что вытащили советники. 1–2 фразы. Не повтор очевидного.]
+
+
+
+
+## Лучшие идеи
+
+
+[Топ-2 или топ-3 идеи. Где идея одного становится сильнее в связке с инсайтом другого — явно покажи это: «Идея X становится прочнее, если соединить её с Y». Используй таблицу для сравнения вариантов, если их несколько.]
+
+
+
+
+## Полезные разногласия
+
+
+[Где советники разошлись и почему это реальный размен. Покажи карту tradeoffs.]
+
+
+
+
+## Рекомендация
+
+
+[Чёткая, усиленная, реализуемая рекомендация. Может быть линией одного советника или гибридом — что сильнее. С обоснованием.]
+
+
+
+
+## С чего начать
+
+
+[Один конкретный шаг. Не список. Если правильный ответ — собрать данные или подождать, так и пиши.]
+
+
+
+
+Используй жирный для выделения главного. Используй таблицы, где сравниваются варианты или где это упростит чтение. Будь прямым. Не уклоняйся.
+
+
+шаг 5: представь итог в чате
+Когда синтез председателя готов, представь полный итог прямо в чате через markdown. Файлы и HTML по умолчанию НЕ генерируются. Пользователь читает итог в разговоре.
+
+
+Формат вывода:
+
+
+* Markdown-структура с заголовками (##) для каждого блока
+
+
+* Жирный на ключевых формулировках
+
+
+* Таблицы, где сравниваются варианты или раскладываются tradeoffs
+
+
+* Буллеты для списков (короткие, по делу)
+
+
+* Без преамбулы, без длинных вступлений
+
+
+Пример вывода:
+
+
+## Итог Совета: {короткая тема}
+
+
+
+
+### Зерно
+
+
+**[главная мысль одной фразой]**
+
+
+
+
+### Лучшие идеи
+
+
+1. **[название идеи]** — [короткое описание]. Усиливается, если соединить с [идея другого советника]: [как именно].
+
+
+2. **[название идеи]** — [короткое описание].
+
+
+
+
+[Если есть сравнение вариантов — таблица:]
+
+
+| Вариант | Сильная сторона | Слабая сторона | Когда брать |
+
+
+|---|---|---|---|
+
+
+| A | … | … | … |
+
+
+| B | … | … | … |
+
+
+
+
+### Полезные разногласия
+
+
+- [тема разногласия]: одни советники говорят X, другие — Y. Реальный tradeoff: [объяснение].
+
+
+
+
+### Рекомендация
+
+
+**[прямая рекомендация]**
+
+
+[Обоснование на 2–3 предложения.]
+
+
+
+
+### С чего начать
+
+
+[Один конкретный шаг.]
+
+
+шаг 6: что дальше — визуал, возражение, транскрипт
+После того как итог представлен в чате, у пользователя три возможных следующих хода. Реагируй на каждый.
+
+
+A. «Визуал» / «инфографика» / «сделай картинку»
+
+
+Сгенерируй визуальную сводку итога. Если доступен инструмент визуализации (например, visualize:show_widget) — используй его, режим diagram или data_viz. Иначе — создай SVG-файл с инфографикой и положи в /mnt/user-data/outputs/.
+
+
+Что должно быть на инфографике:
+
+
+* Зерно — крупно, в центре или сверху
+
+
+* Лучшие идеи — карточки или блоки с названиями и одной строкой описания
+
+
+* Если есть сравнение вариантов — таблица или диаграмма
+
+
+* Рекомендация — выделена визуально
+
+
+* С чего начать — внизу, как call to action
+
+
+Стиль — чистый, сканируемый, без декоративного шума.
+
+
+B. Возражение пользователя или новый контекст
+
+
+Если после итога пользователь говорит что-то вроде:
+
+
+* «А я не согласна с пунктом X»
+
+
+* «Покупатель промахнулся, потому что моя аудитория не такая»
+
+
+* «А ты учёл, что у меня уже есть Y?»
+
+
+* «А если бюджет на самом деле в 2 раза меньше?»
+
+
+НЕ перезапускай весь совет. Запусти второй раунд только по спорной точке:
+
+
+1. Изолируй точку разногласия в одну чёткую формулировку.
+
+
+2. Возьми 2–3 советников, чьи ответы прямее всего касаются этой точки (или те, на кого пользователь сослался).
+
+
+3. Дай им новый контекст и попроси переответить ТОЛЬКО по этой точке, не по всему вопросу.
+
+
+4. Председатель выдаёт обновлённый абзац — не полный итог, а апдейт: «Учитывая это, рекомендация меняется/не меняется так: …».
+
+
+Это сильно дешевле полной перезагрузки и даёт пользователю реальный диалог с советом, а не одноразовый вердикт.
+
+
+C. «Сохрани транскрипт» / «запиши»
+
+
+Сохрани полный транскрипт сессии в council-transcript-[timestamp].md в директорию проекта active/ (или в /mnt/user-data/outputs/, если активной директории нет). В транскрипте: сформулированный вопрос, все ответы советников, перекрёстные обзоры (если были), итог председателя, последующие раунды (если были).
+
+
+Не сохраняй автоматически — только по запросу или если вопрос явно значимый и пользователь захочет вернуться.
+
+
+________________
+
+
+пример: совет по продуктовому решению
+Пользователь: «Спроси совет: думаю запустить курс по Claude Code для новичков за $297. Моя аудитория — в основном нетехнические соло-предприниматели. Это правильный ход?»
+
+
+(режим: экспресс)
+
+
+Критик: «Рынок сейчас завален курсами по Claude. За $297 ты конкурируешь с бесплатным контентом на YouTube. Аудитория нетехническая — это значит высокая нагрузка на поддержку и риск возвратов. Те, кто готов заплатить $297, скорее всего, уже прошли уровень новичка…»
+
+
+Стратег с нуля: «Чего ты на самом деле хочешь добиться? Если выручки — курс это один из самых медленных путей. Если авторитета — бесплатный ресурс может дать больше. Если строишь базу клиентов под более дорогие офферы — ценник и аудитория, возможно, не совпадают…»
+
+
+Оптимист: «Claude для новичков-соло — огромный недообслуженный рынок. Все учат продвинутому. Если ты хорошо зайдёшь в новичков, ты владеешь точкой входа во всё это пространство. $297 может быть мало. А если это вырастет в программу за $997 с доступом к комьюнити…»
+
+
+Покупатель: «Я нетехнический соло. Я не знаю, что такое Claude Code, и почему я должен учить именно его, а не ChatGPT, который у меня уже есть. $297 — это ползарплаты для половины твоей аудитории. Ты мне продаёшь инструмент. Я хочу, чтобы мне продали результат: я хочу освободить 10 часов в неделю или зарабатывать на ИИ. Если я не вижу этого в первые 5 секунд лендинга — я ушла…»
+
+
+Исполнитель: «Полноценный курс — это 4–8 недель производства. Прежде чем что-то строить, проведи живой воркшоп за $97 на 50 человек. Так ты валидируешь спрос, соберёшь отзывы и получишь сырьё для курса. Если 50 человек не купят воркшоп — 500 не купят курс…»
+
+
+________________
+
+
+Итог Совета: курс по Claude Code за $297
+Зерно
+Ты продаёшь инструмент людям, которые покупают результат. Это не вопрос цены — это вопрос упаковки.
+Лучшие идеи
+1. Сначала валидируй воркшопом, потом строй курс (Исполнитель). Усиливается мыслью Покупателя: воркшоп должен называться не «Claude Code для новичков», а «Как освободить 10 часов в неделю с помощью ИИ».
+
+
+2. Переупаковать оффер с инструмента на результат (Покупатель + Стратег с нуля). Аудитория не покупает Claude — она покупает свободное время или новый источник дохода.
+
+
+| Вариант | Сильная сторона | Слабая сторона | Когда брать |
+
+
+|---|---|---|---|
+
+
+| Курс за $297 сейчас | Быстрая выручка, если выстрелит | Высокий риск, нет валидации, неверная упаковка | Никогда без валидации |
+
+
+| Воркшоп за $97 → курс | Валидация спроса, сырьё для курса, отзывы | Дольше до большой выручки | Сейчас |
+
+
+| Бесплатный ресурс → программа за $997 | Строит авторитет и базу под высокий чек | Долгий путь | Если есть запас по времени |
+Полезные разногласия
+* Цена. Критик: $297 много для конкуренции с бесплатным. Оптимист: $297 мало для реальной ценности. Реальный размен — это вопрос упаковки и комьюнити: голый курс за $297 действительно не выживет, но программа с поддержкой за $997 может.
+Рекомендация
+Не строй курс. Запусти живой воркшоп за $97 с правильной упаковкой результата, а не инструмента. Это решает три проблемы сразу: валидирует спрос (если 50 не купят воркшоп — 500 не купят курс), даёт сырьё и отзывы, и тестирует упаковку. По итогам воркшопа решишь — растить в курс за $297 или сразу в программу за $997.
+С чего начать
+Напиши лендинг воркшопа на одной странице с заголовком про результат («Как освободить 10 часов в неделю с помощью ИИ»), а не про инструмент. Открой регистрацию и посмотри на конверсию холодного трафика.
+
+
+________________
+
+
+важные замечания
+* Запускай советников параллельно. Последовательный запуск тратит время и даёт ранним ответам просочиться в поздние.
+
+
+* В полном режиме всегда анонимизируй ответы для перекрёстного обзора. Если ревьюеры знают, кто что сказал, они начнут отдавать предпочтение определённым стилям мышления, а не оценивать по сути.
+
+
+* Председатель не судья и не спорщик. Его задача — найти зерно и усилить лучшие идеи, скрестив сильные стороны разных мнений. Если 5 из 5 советников говорят одно и то же — это и есть итог. Председатель не ищет, с чем не согласиться. Он ищет, что взять в работу.
+
+
+* Не созывай совет ради тривиальных вопросов. Если у пользователя один правильный ответ — просто ответь. Совет нужен для реальной неопределённости, где разные перспективы добавляют ценность.
+
+
+* Экспресс по умолчанию. Полный совет — только если пользователь явно попросил или ставка очевидно высокая. Лишний раунд перекрёстного обзора не делает решение лучше — он делает его дороже.
+
+
+* Второй раунд — только по спорной точке. Если пользователь возражает после итога, не перезапускай всех советников. Точечно переответь только на возражение.
+
+
+* Визуал — только по команде. «Визуал», «инфографика», «сделай картинку» — тогда генерируй. Без команды — текст в чате.
